@@ -1,0 +1,128 @@
+---
+title: "Vibha's simulation"
+output: html_notebook
+---
+
+#vibha simulation  - compare max homphily, one sided homophily an d
+
+```{r prepare the data, echo=FALSE}
+
+
+
+#upload the library
+library(Rmisc)
+library(tidyverse)
+library(tidyboot)
+library(reshape2)
+library (lme4)
+#get real data
+realData =
+    list.files(pattern="*.csv")  %>% # create a list of all csv files in the folder  
+    map_df(~read_csv(.))
+
+idList = unique(realData$subject_id)
+
+
+#import simulation data
+simResults = read_csv("model_simulation/simulation_results.csv")%>%
+  filter(id %in% idList)
+
+names(simResults) <- c("subject_id", "strategy", "mean_mean", "mean_ci_low", "mean_ci_high","diff_mean","diff_ci_low","diff_ci_high","loyalty_mean","loyalty_ci_low","loyalty_ci_high")
+
+
+
+
+#rename real data conditions
+realData$condition = factor (realData$condition, label = c("select", "control") )
+#only take experimental participants
+realData = subset(realData, condition == "select")
+
+#only keep relevant columns
+realData = realData %>%
+  select(subject_id, subject_rating, kept_1_rating, kept_2_rating, kept_3_rating)
+
+#find mean difference per round
+#ASK: do you want absolute value of difference?
+realData["difference_1"] <- realData$kept_1_rating - realData$subject_rating
+realData["difference_2"] <- realData$kept_2_rating - realData$subject_rating
+realData["difference_3"] <- realData$kept_3_rating - realData$subject_rating
+realData["diff_mean"] <- rowMeans(realData[c('difference_1', 'difference_2', 'difference_3')])
+
+#find mean kept score per round
+#ASK: ok to do it like this, i.e. n = 20
+realData["kept_mean"] <- rowMeans(realData[c('kept_1_rating', 'kept_2_rating', 'kept_3_rating')])
+
+#use tidyboot to create an mean average kept score
+realMean = realData %>%
+  group_by(subject_id) %>%
+  tidyboot_mean(column = kept_mean)
+
+realMean = realMean %>%
+  select(-empirical_stat, -n)
+
+names(realMean) <- c("subject_id", "mean_ci_low", "mean_mean", "mean_ci_high")
+
+realDiff = realData %>%
+  group_by(subject_id) %>%
+  tidyboot_mean(column = diff_mean)
+
+realDiff = realDiff %>%
+  select(-empirical_stat, -n)
+
+names(realDiff) <- c("subject_id", "diff_ci_low", "diff_mean", "diff_ci_high")
+
+realResults = left_join(realMean, realDiff, by = 'subject_id')
+  
+
+simResults=simResults%>%
+  select(-starts_with("loyal"))
+
+
+realResults$strategy="real"
+
+
+simData = rbind(realResults,simResults)
+
+
+
+
+
+meansSimulation =simData%>%
+  group_by(strategy)%>%
+  summarize (strategyMean = mean(mean_mean, na.rm =T))
+
+```
+
+
+
+```{r graph results}
+
+
+r =lmer (mean_mean ~ strategy+ (1|subject_id),simData);summary(r)
+
+
+dfc <- summarySE(simData, measurevar="mean_mean", groupvars=c("strategy"), na.rm = T)
+
+
+ggplot(dfc, aes(x=strategy, y=mean_mean, fill=strategy)) + 
+    geom_bar(position=position_dodge(), stat="identity", colour="black" ) +
+    labs(title="")+
+    guides(fill=guide_legend(title=NULL))+
+    theme_bw()+
+    theme(plot.title = element_text(hjust=0.5,size = rel(1.5)),
+          axis.title.y = element_text(face="bold",  size=14),
+          axis.text.x  = element_text( vjust=0.5, size=18),
+          axis.text.y  = element_text( vjust=0.5, size=12),
+          axis.title.x = element_blank(),
+          legend.position="none") +   
+  coord_cartesian(ylim=c(4.5, 8)) +
+  #facet_wrap(~elimKeep)+
+  labs(title= "mean of simulation" , y= "mean_mean")+
+  geom_errorbar(aes(ymin=mean_mean-ci, ymax=mean_mean+ci),
+                  width=.1,position=position_dodge(.9))
+
+
+
+
+```
+

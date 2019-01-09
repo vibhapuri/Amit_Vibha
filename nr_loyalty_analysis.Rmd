@@ -1,0 +1,253 @@
+---
+title: "nr_loyalty_analysis"
+author: "Joseph M. Abruzzo"
+date: "2/9/2018"
+output: pdf_document
+---
+
+```{r, echo = FALSE, Include= F}
+# DATA READING, CLEANING
+require(tidyverse)
+
+d =
+    list.files(pattern="*.csv") %>% # create a list of all csv files in the folder  
+    map_df(~read_csv(.))
+
+d = d[which(d$subject_id != 0),]
+
+d$diff1 = rep(0, length(d$subject_id))
+d$diff2 = rep(0, length(d$subject_id))
+d$diff3 = rep(0, length(d$subject_id))
+d$diff_mean = rep(0, length(d$subject_id))
+
+for (i in seq(1,length(d$subject_id))) {
+  if (as.character(d$condition[i]) == 'keep') {
+    d$condition[i] = 'control'
+  } else {
+    d$condition[i] = 'choice'
+  }
+  
+  d$diff1[i] = d$kept_1_rating[i] - d$subject_rating[i]
+  d$diff2[i] = d$kept_2_rating[i] - d$subject_rating[i]
+  d$diff3[i] = d$kept_3_rating[i] - d$subject_rating[i]
+  
+  
+}
+```
+
+
+```{r, echo = FALSE}
+# FUNCTION THAT TAKES EXPERIMENT DATA & FITS LOYALTY GLM
+
+require(reshape2)
+
+loyalty_2 = function(d) {
+  
+  a1_kept = c()
+  a2_kept = c()
+  a3_kept = c()
+  a4_kept = c()
+  a5_kept = c()
+  a6_kept = c()
+  
+  a1_loyalty = c()
+  a2_loyalty = c()
+  a3_loyalty = c()
+  a4_loyalty = c()
+  a5_loyalty = c()
+  a6_loyalty = c()
+  
+  a1_loyalty_current = 0
+  a2_loyalty_current = 0
+  a3_loyalty_current = 0
+  a4_loyalty_current = 0
+  a5_loyalty_current = 0
+  a6_loyalty_current = 0
+  
+  
+  for (i in seq(1,length(d$subject_id))) {
+    
+    if (d$a1_name[i] == d$kept_1_name[i] | d$a1_name[i] == d$kept_2_name[i] | d$a1_name[i] == d$kept_3_name[i]) {
+      a1_kept = c(a1_kept, 1)
+    } else {
+      a1_kept = c(a1_kept, 0)
+    }
+    
+    if (a1_kept[i] == 1) {
+      a1_loyalty_current = a1_loyalty_current + 1
+      a1_loyalty = c(a1_loyalty, a1_loyalty_current)
+    } else {
+      a1_loyalty = c(a1_loyalty, a1_loyalty_current)
+      a1_loyalty_current = 0
+    }
+    
+
+    if (d$a2_name[i] == d$kept_1_name[i] | d$a2_name[i] == d$kept_2_name[i] | d$a2_name[i] == d$kept_3_name[i]) {
+      a2_kept = c(a2_kept, 1)
+    } else {
+      a2_kept = c(a2_kept, 0)
+    }
+    
+    if (a2_kept[i] == 1) {
+      a2_loyalty_current = a2_loyalty_current + 1
+      a2_loyalty = c(a2_loyalty, a2_loyalty_current)
+    } else {
+      a2_loyalty = c(a2_loyalty, a2_loyalty_current)
+      a2_loyalty_current = 0
+    }
+    
+    
+    if (d$a3_name[i] == d$kept_1_name[i] | d$a3_name[i] == d$kept_2_name[i] | d$a3_name[i] == d$kept_3_name[i]) {
+      a3_kept = c(a3_kept, 1)
+    } else {
+      a3_kept = c(a3_kept, 0)
+    }
+    
+    if (a3_kept[i] == 1) {
+      a3_loyalty_current = a3_loyalty_current + 1
+      a3_loyalty = c(a3_loyalty, a3_loyalty_current)
+    } else {
+      a3_loyalty = c(a3_loyalty, a3_loyalty_current)
+      a3_loyalty_current = 0
+    }
+    
+    
+    if (d$a4_name[i] == d$kept_1_name[i] | d$a4_name[i] == d$kept_2_name[i] | d$a4_name[i] == d$kept_3_name[i]) {
+      a4_kept = c(a4_kept, 1)
+    } else {
+      a4_kept = c(a4_kept, 0)
+    }
+    
+    if (a4_kept[i] == 1) {
+      a4_loyalty_current = a4_loyalty_current + 1
+      a4_loyalty = c(a4_loyalty, a4_loyalty_current)
+    } else {
+      a4_loyalty = c(a4_loyalty, a4_loyalty_current)
+      a4_loyalty_current = 0
+    }
+    
+    
+    if (d$a5_name[i] == d$kept_1_name[i] | d$a5_name[i] == d$kept_2_name[i] | d$a5_name[i] == d$kept_3_name[i]) {
+      a5_kept = c(a5_kept, 1)
+    } else {
+      a5_kept = c(a5_kept, 0)
+    }
+    
+    if (a5_kept[i] == 1) {
+      a5_loyalty_current = a5_loyalty_current + 1
+      a5_loyalty = c(a5_loyalty, a5_loyalty_current)
+    } else {
+      a5_loyalty = c(a5_loyalty, a5_loyalty_current)
+      a5_loyalty_current = 0
+    }
+    
+    
+    if (d$a6_name[i] == d$kept_1_name[i] | d$a6_name[i] == d$kept_2_name[i] | d$a6_name[i] == d$kept_3_name[i]) {
+      a6_kept = c(a6_kept, 1)
+    } else {
+      a6_kept = c(a6_kept, 0)
+    }
+    
+    if (a6_kept[i] == 1) {
+      a6_loyalty_current = a6_loyalty_current + 1
+      a6_loyalty = c(a6_loyalty, a6_loyalty_current)
+    } else {
+      a6_loyalty = c(a6_loyalty, a6_loyalty_current)
+      a6_loyalty_current = 0
+    }
+    
+
+    
+  }
+  
+  d$a1_kept = a1_kept
+  d$a2_kept = a2_kept
+  d$a3_kept = a3_kept
+  d$a4_kept = a4_kept
+  d$a5_kept = a5_kept
+  d$a6_kept = a6_kept
+  
+  d$a1_loyalty = a1_loyalty
+  d$a2_loyalty = a2_loyalty
+  d$a3_loyalty = a3_loyalty
+  d$a4_loyalty = a4_loyalty
+  d$a5_loyalty = a5_loyalty
+  d$a6_loyalty = a6_loyalty
+  
+  melted_d_1 <- melt(d, id.vars = c('subject_id','trial', 'subject_rating'), measure.vars = c('a1_kept','a2_kept','a3_kept','a4_kept','a5_kept','a6_kept','a1_rating','a2_rating','a3_rating','a4_rating','a5_rating','a6_rating','a1_loyalty','a2_loyalty','a3_loyalty','a4_loyalty','a5_loyalty','a6_loyalty'))
+
+  grouped_d_1 <- group_by(melted_d_1, subject_id, trial, subject_rating)
+
+  grouped_d_rel_1 <- grouped_d_1[which(grouped_d_1$variable == 'a1_rating' | grouped_d_1$variable == 'a2_rating' | grouped_d_1$variable == 'a3_rating' | grouped_d_1$variable == 'a4_rating' | grouped_d_1$variable == 'a5_rating' | grouped_d_1$variable == 'a6_rating' | grouped_d_1$variable == 'a1_kept' | grouped_d_1$variable == 'a2_kept' | grouped_d_1$variable == 'a3_kept' | grouped_d_1$variable == 'a4_kept' | grouped_d_1$variable == 'a5_kept' | grouped_d_1$variable == 'a6_kept' | grouped_d_1$variable == 'a1_loyalty' | grouped_d_1$variable == 'a2_loyalty' | grouped_d_1$variable == 'a3_loyalty' | grouped_d_1$variable == 'a4_loyalty' | grouped_d_1$variable == 'a5_loyalty' | grouped_d_1$variable == 'a6_loyalty'),] 
+  
+  d_new = data.frame(matrix(ncol = 9, nrow = 0))
+  names(d_new) = c('subject_id','trial','variable','value','variable.1','value.1','variable.2','value.2')
+  
+  subjects_unique = unique(d$subject_id)
+  
+  print(subjects_unique)
+  
+  for (i in subjects_unique) {
+    for (j in seq(1,20)) {
+      
+      d_current = grouped_d_rel_1[which(grouped_d_rel_1$trial == j & grouped_d_rel_1$subject_id == i),]
+      
+      d_current_1 = d_current[c(1,2,3,4,5,6),]
+      d_current_2 = d_current[c(7,8,9,10,11,12),]
+      d_current_3 = d_current[c(13,14,15,16,17,18),]
+      
+      d_current_2 = d_current_2[,c(4,5)]
+      d_current_3 = d_current_3[,c(4,5)]
+      
+      d_current = data.frame(d_current_1, d_current_2, d_current_3)
+      
+      
+      
+      d_new = data.frame(rbind(d_new, d_current))
+      
+    }
+  }
+  
+  names(d_new) = c('subject_id','trial','subject_rating','k1','kept','k2','agent_rating','k3','loyalty')
+  
+  d_new = d_new[,-c(4,6,8)]
+  
+  return(d_new)
+
+}
+
+q = loyalty_2(d)
+q$dist = q$agent_rating - q$subject_rating
+
+
+q$loyaltyBinary = ifelse(q$loyalty>=1,1,0)
+require(lme4)
+
+q$logloyalty =log(q$loyalty+1)
+
+
+q[complete.cases(q), ]
+
+
+q = subset (q , subject_id >0)
+q$sdist = scale (q$dist)
+
+
+
+r = glmer(kept ~ loyaltyBinary* scale(dist) + (1|subject_id),family=binomial, data = q);summary(r)
+
+
+r = glmer(kept ~ loyaltyBinary+ poly(dist,2) + (1|subject_id),family=binomial, data = q);summary(r)
+
+
+r = lmer(logloyalty~ poly(dist,2)+(1|subject_id),q);summary(r)
+
+ggplot(q,aes(x=kept, y=loyalty ))+
+  geom_point(shape=1, position=position_jitter(width=.2,height=.2))+ 
+  stat_smooth(method='auto',fill = NA, se = F)+
+   # +geom_text(aes(label=id),hjust=0, vjust=0,position=position_jitter(width=.1,height=.1))
+  labs(title = "", x = "")
+
+
+
+```

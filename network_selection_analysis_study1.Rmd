@@ -1,0 +1,1060 @@
+---
+title: "Network Selection"
+output: html_notebook
+---
+
+**we registered three main questions**
+
+**1** - Homophily- Do participants choose people who are closer to their rating
+
+**2** - Friending vs. Unfriending - is there a difference in homophily when looking at the manipulation
+
+**3** - Choice strategyf
+
+**4** - stickiness.
+
+
+
+```{r , echo=FALSE,include=FALSE}
+rm(list = ls())
+
+library (Rmisc);library(tidyverse);library(lme4); library (lmerTest);library(tidyboot)
+
+#upload all the csv files into one data set 
+d =
+    list.files(pattern="*.csv")  %>% # create a list of all csv files in the folder  
+    map_df(~read_csv(.))
+
+#d = subset (d, subject_id!=c(49)) #,68,78
+#ask how man unique particpiants we have
+#length(unique(d$subject_id))
+
+#create a difference score between the individual rating and each other chosen participant-this is used later in the simularion??
+d$difKeep1 = d$kept_1_rating-d$subject_rating
+d$difKeep2 = d$kept_2_rating-d$subject_rating
+d$difKeep3 = d$kept_3_rating-d$subject_rating
+d$difElim1 = d$elim_1_rating-d$subject_rating
+d$difElim2 = d$elim_2_rating-d$subject_rating
+d$difElim3 = d$elim_3_rating-d$subject_rating
+
+d$condition = factor (d$condition, label = c("select", "control") )
+
+#average keep columns 
+d$realKeepMean= rowMeans(d[,c('kept_1_rating', 'kept_2_rating', 'kept_3_rating')], na.rm=T)
+
+d$difKeepMean = rowMeans(d[,c('difKeep1', 'difKeep1', 'difKeep1')], na.rm=T)
+
+
+
+#*****add sentistrength data**************
+#Create a dataset that matach the sentiment analysis file
+sent = d%>%
+ select(condition,subject_id, trial, ends_with("rating"), ends_with("title"), -starts_with("kept"), -starts_with("elim") )%>%
+ gather(agent, value, -subject_id, -trial,-condition)%>%
+ separate(agent, into = c("agent","question"), sep ="\\_")%>%
+ spread(question, value)%>%
+ select(subject_id,trial,agent)
+
+#download sentiment file
+t = read_csv("C:/Users/chaga/Google Drive/research/network selection/network_regulation_study_1_police_brutality/data/data_emotion_sentiment/allText_out.csv")
+t=cbind(sent,t) #bind file
+
+
+#resturcture the sentiment file in a way that could be added to d
+t= t%>%
+ unite(agent1,sentPos,sentNeg,Text, sep ="%" )%>%
+ spread(agent, agent1)%>%
+ separate(a1, into = c("a1_sentPos", "a1_sentNeg","Text"), sep ="\\%")%>%
+ separate(a2, into = c("a2_sentPos", "a2_sentNeg","Text"), sep ="\\%")%>%
+ separate(a3, into = c("a3_sentPos", "a3_sentNeg","Text"), sep ="\\%")%>%
+ separate(a4, into = c("a4_sentPos", "a4_sentNeg","Text"), sep ="\\%")%>%
+ separate(a5, into = c("a5_sentPos", "a5_sentNeg","Text"), sep ="\\%")%>%
+ separate(a6, into = c("a6_sentPos", "a6_sentNeg","Text"), sep ="\\%")%>%
+separate(subject, into = c("subject_sentPos", "subject_sentNeg","Text"), sep ="\\%")%>%
+select(-Text)
+
+d =left_join(d, t, by = c("subject_id","trial")) # add to d
+
+rm(t, sent)
+  
+
+ 
+#average keep columns 
+#d$realKeepMean= rowMeans(d[,c('kept_1_rating', 'kept_2_rating', 'kept_3_rating')], na.rm=T)
+#d$difKeepMean = rowMeans(d[,c('difKeep1', 'difKeep1', 'difKeep1')], na.rm=T)
+
+
+#**********add moderators to file*************************
+#m = read_csv('./moderators/network_moderators.csv') # we are reading the moderators file (which was collected via qualtrics)
+#m = m[,c(19:93)] #cleaning
+#m$idenScale = rowMeans(m[,c('iden1', 'iden2', 'iden3', 'iden4','iden5')], na.rm=T)
+#m$idenScale = m$idenScale-13
+
+#m=m%>%
+#  select (subject_id,poli,idenScale)
+
+#d = left_join(d,m, by="subject_id")
+#rm(m)
+
+#d$iden2=ifelse (d$idenScale<3.2,1,2)
+#d$poli2=ifelse (d$idenScale<3,1,2)
+
+
+#long format of peer ratings and difference
+dl = d %>% 
+  gather(keepNumber, peerRating,kept_1_rating,kept_2_rating,
+         kept_3_rating,elim_1_rating,
+         elim_2_rating,elim_3_rating)%>%
+  separate(keepNumber, into = c("elimKeep", "number", "qq"), sep ="\\_")%>%
+  select(subject_id, trial,condition,subject_rating,elimKeep, number, peerRating)
+
+dl$elimKeep=factor(dl$elimKeep,label = c("eliminated","kept"))
+dl$number=as.integer(dl$number)
+
+dl$peerDif=  dl$peerRating-dl$subject_rating 
+
+rm(peerLong)
+
+
+#a table with averate rating of each participant - this is added to later graphs.
+rating = d %>%
+  group_by(subject_id)%>%
+  summarise(
+    ratingMean = mean(subject_rating) # get mean rating for each participant
+    #condition = first(condition) #get the condition they were assigned to
+    ) 
+
+d =left_join(d, rating, by = "subject_id")
+
+
+#subsets 
+s = subset (d, condition == "select")
+sl = subset (dl, condition == "select")
+c = subset (d, condition == "control")
+cl = subset (dl, condition == "control")
+
+rm(rating)
+
+
+#con = dl%>% #creating a dateframe con based d 
+#  group_by(subject_id) %>%
+#  select(subject_id, condition)%>%
+#  slice (1)
+
+#write.csv(con, "conditionId.csv")
+
+```
+
+
+```{r descriptieves}
+
+des = d%>%
+  group_by(id)%>%
+  select(age)
+```
+
+
+###1 - Values kept
+
+Let's first look at kept ratings for the control and the selection condition and see if they are difference
+
+```{r}
+
+r= lmer(peerRating~condition +(1|subject_id), dl); summary(r)
+
+
+dfc <- summarySE(dl, measurevar="peerRating", groupvars=c("condition","elimKeep"), na.rm = T)
+
+#dfc$elimKeep=factor(dfc$elimKeep, label = c("eliminate", "keep"))
+pd <- position_dodge(0)
+ggplot(dfc, aes(x=condition, y=peerRating, fill=elimKeep)) + 
+    geom_bar(position=position_dodge(), stat="identity", colour="black" ) +
+    labs(title="")+
+    guides(fill=guide_legend(title=NULL))+
+    theme_bw()+
+    theme(plot.title = element_text(size = rel(1.5)),
+          axis.title.y = element_text(face="bold",  size=14),
+          axis.text.x  = element_text( vjust=0.5, size=18),
+          axis.text.y  = element_text( vjust=0.5, size=12),
+          axis.title.x = element_blank()) +  
+  coord_cartesian(ylim=c(3, 6)) +
+  ylab("Peer Rating")+
+  geom_errorbar(aes(ymin=peerRating-ci, ymax=peerRating+ci),
+                  width=.1,position=position_dodge(.9))
+
+
+
+```
+
+kept participants over time 
+```{r}
+
+r = lmer(peerRating~scale(trial)*condition +(1|subject_id),dl);summary(r)
+
+
+dfc <- summarySE(dl, measurevar="peerRating", groupvars=c("elimKeep", "trial","condition"), na.rm = T)
+
+dfc=subset(dfc, elimKeep== "kept")
+
+g = (ggplot(dfc,aes(x=trial, y=peerRating ,fill = condition))
+  + geom_errorbar(aes(ymin=peerRating-se, ymax=peerRating+se), width=.1) 
+  + geom_line( aes(linetype= condition, group=condition),size = 1.2) 
+  +geom_point() 
+  #+scale_y_continuous(limits = c(3, 7))
+  +theme_bw()
+  +theme(legend.title=element_blank(),
+         #legend.position =  "none",
+         axis.title.y = element_text(  size=14),
+         axis.text.x  = element_text( vjust=0.5, size=14),
+         axis.text.y  = element_text( vjust=0.5, size=12),
+         axis.title.x = element_text(vjust=0.5, size=14)) 
+  +labs(title = "Kept participants as a function of trial number", x = "Trial number", y = "Ratings"));g
+
+
+
+dfc <- summarySE(dl, measurevar="peerRating", groupvars=c("elimKeep", "trial","condition"), na.rm = T)
+
+dfc = subset (dfc, elimKeep =="kept")
+
+g = (ggplot(dfc,aes(x=trial, y=peerRating ,fill = condition, colour = condition))
+  +stat_smooth(aes(linetype=condition, colour =condition), 
+              size =1.2, method='lm',fill = "grey", 
+              se = T, na.rm =T) 
+  +theme_bw()
+  +theme(legend.title=element_blank(),axis.title.y = element_text(  size=14),axis.text.x  = element_text( vjust=0.5, size=14),axis.text.y  = element_text( vjust=0.5, size=12),axis.title.x = element_text(vjust=0.5, size=14))
+  +labs(title = "keep as a function of trial number", x = "Trial number", y = " Keep"));g
+
+```
+
+
+###2 - homophily
+
+I am using the the difference between participants and the users that each participants kept vs. eliminated. 
+
+```{r homophily}
+#look at the absolute value compare elim v keep
+#r = lmer (difValue~ elimKeep+(1|subject_id), sl) ; summary (r)
+
+
+dfc <- summarySE(dl, measurevar="peerDif", groupvars=c("elimKeep","condition"), na.rm = T)
+
+pd <- position_dodge(0)
+ggplot(dfc, aes(x=condition, y=peerDif, fill=elimKeep)) + 
+    geom_bar(position=position_dodge(), stat="identity", colour="black" ) +
+    labs(title=" Difference between kept users and the participant")+
+    guides(fill=guide_legend(title=NULL))+
+    theme_bw()+
+    theme(plot.title = element_text(size = rel(1.5)),
+          axis.title.y = element_text(face="bold",  size=14),
+          axis.text.x  = element_text( vjust=0.5, size=18),
+          axis.text.y  = element_text( vjust=0.5, size=12),
+          axis.title.x = element_blank()) +  
+  coord_cartesian(ylim=c(-1.5, 1)) +
+  ylab("Difference")+
+  geom_errorbar(aes(ymin=peerDif-ci, ymax=peerDif+ci),
+                  width=.1,position=position_dodge(.9))
+
+
+
+```
+
+
+
+``` {r homophily over time,include=FALSE}
+
+#r = lmer (abs(peerDif)~ elimKeep*trial+(1|subject_id), sl) ; summary (r)
+
+
+dfc <- summarySE(dl, measurevar="peerDif", groupvars=c("elimKeep", "trial","condition"), na.rm = T)
+
+dfc=subset(dfc, elimKeep=="kept")
+
+g = (ggplot(dfc,aes(x=trial, y=peerDif ,fill = condition,colour = condition))
+  #+ geom_errorbar(aes(ymin=peerDif-ci, ymax=peerDif+ci), width=.1) 
+  +stat_smooth(aes(linetype=condition, colour =condition), 
+              size =1.2, method='lm',fill = "grey", 
+              se = T, na.rm =T) 
+  #+geom_point() 
+ # +scale_y_continuous(limits = c(-1, 3.5))
+  +theme_bw()
+  +theme(legend.title=element_blank(),
+         axis.title.y = element_text(  size=14),
+         axis.text.x  = element_text( vjust=0.5, size=14),
+         axis.text.y  = element_text( vjust=0.5, size=12),
+         axis.title.x = element_text(vjust=0.5, size=14)) 
+  +labs(title = "Difference to keep as a function of trial number", x = "trial number", y = " difference"));g
+
+
+g = (ggplot(dfc,aes(x=trial, y=peerDif ,fill = condition))
+  + geom_errorbar(aes(ymin=peerDif-ci, ymax=peerDif+ci), width=.1) 
+  + geom_line( aes(linetype= condition, group=condition),size = 1.2) 
+  +geom_point() 
+  +scale_y_continuous(limits = c(-2.5, 2))
+  +theme_bw()
+  +theme(legend.title=element_blank(),
+         legend.position =  "none",
+         axis.title.y = element_text(  size=14),
+         axis.text.x  = element_text( vjust=0.5, size=14),
+         axis.text.y  = element_text( vjust=0.5, size=12),
+         axis.title.x = element_text(vjust=0.5, size=14)) 
+  +labs(title = "Select condition: difference to kept participants as a function of trial number", x = "trial number", y = "Difference"));g
+
+```
+
+
+
+There is a significant difference between the people participants choose to keep and the people particiapnts choose to eliminate.
+
+
+##2 - difference in rating bewteen the conditions 
+
+```{r difference in condition, echo=FALSE}
+r = lmer(subject_rating~ condition + (trial|subject_id),dl);summary(r)
+
+r = lmer(subject_rating~ condition *trial + (trial|subject_id),dl);summary(r)
+
+
+#graph
+dfc <- summarySE(dl, measurevar="subject_rating", groupvars=c("elimKeep", "condition"), na.rm = T)
+
+dfc=subset(dfc,elimKeep=="kept")
+
+dfc$ci = c(.23,.23)
+
+ggplot(dfc, aes(x=condition, y=subject_rating, fill=condition)) + 
+    geom_bar(position=position_dodge(), stat="identity", colour="black" ) +
+    labs(title="")+
+    guides(fill=guide_legend(title=NULL))+
+    theme_bw()+
+    theme(plot.title = element_text(hjust=0.5,size = rel(1.5)),
+          axis.title.y = element_text(face="bold",  size=14),
+          axis.text.x  = element_text( vjust=0.5, size=18),
+          axis.text.y  = element_text( vjust=0.5, size=12),
+          axis.title.x = element_blank(),
+          legend.position="none") +   
+  coord_cartesian(ylim=c(4.5, 6)) +
+  #facet_wrap(~elimKeep)+
+  labs(title= "Participants' Ratings" , y= "ratings")+
+  geom_errorbar(aes(ymin=subject_rating-ci, ymax=subject_rating+ci),
+                  width=.1,position=position_dodge(.9))
+
+```
+
+```{r rating over time,echo=FALSE}
+
+r = lmer(subject_rating~ trial*condition + (1|subject_id),d);summary(r)
+
+dfc <- summarySE(dl, measurevar="subject_rating", groupvars=c("condition", "trial"), na.rm = T)
+
+g = (ggplot(dfc,aes(x=trial, y=subject_rating ,fill = condition,colour=condition))
+  + geom_point(shape =1)
+  #+ geom_errorbar(aes(ymin=subject_rating-ci, ymax=subject_rating+ci), width=.1) 
+  +stat_smooth(aes(linetype=condition, colour =condition), 
+              size =1.2, method='lm',fill = "grey", 
+              se = T, na.rm =T) 
+  #+geom_point() 
+  #+scale_y_continuous(limits = c(3.5, 6))
+  +theme_bw()
+  +theme(plot.title = element_text(hjust = 0.5, size = rel(1.5) ),
+        legend.title=element_blank(),
+         axis.title.y = element_text(  size=14),
+         axis.text.x  = element_text( vjust=0.5, size=14),
+         axis.text.y  = element_text( vjust=0.5, size=12),
+         axis.title.x = element_text(vjust=0.5, size=14))
+  +labs(title = "Emotions per Trial Number", x = "Trial", y = "Emotion Ratings"));g
+
+```
+
+the goal of this analysis is to examine whether participants whose bias is bi
+
+```{r correlation - bias and rating}
+
+dlc = subset (dl, elimKeep=="kept"& condition =="select")
+dlc=dlc %>%select(-condition, -elimKeep,-peerDif)
+
+dlc =dlc %>%
+  gather (rater, valueRating,-subject_id, -trial, -number)
+
+
+r = lmer(valueRating~ rater +(1|subject_id),dlc);summary(r)
+
+#get a slope per participant
+model_bias= dlc%>%
+  group_by(subject_id)  %>% 
+  do(r = lm(valueRating~ rater , data = .))%>%
+  mutate(bias = r$coefficients[[2]])%>%
+  select(-r)
+
+    #models is the lms for all participants
+
+model_rating = sl%>%
+  group_by(subject_id)%>%
+  do(r = lm(subject_rating~ trial , data = .))%>%
+  mutate(ratingChange = r$coefficients[[2]])%>%
+  select(-r)
+
+model = left_join(model_bias,model_rating, by = "subject_id")
+
+cor.test(model$ratingChange,model$bias)
+
+
+
+ggplot(model, aes(x=ratingChange, y=bias)) +
+    geom_point(shape=1) +    
+    geom_smooth()
+
+```
+
+
+###3 - comparing to various algorithms - see Vibha's code  
+
+We look at the users that participants kept: 
+
+1. What would happen if you compared it to a random selection.
+2. What would happen if you just took the 3 people closest to you. 
+3. What would happen if you just sampled the most liberal group. 
+
+
+```{r keep compare values,echo=FALSE}
+#get the true count keep
+
+# add a simulation of an average of 1000 random choices. 
+s <- s %>% 
+  rowwise() %>% # this basically instruct r to loop by row 
+  mutate( #
+    randKeepMean = list(c(a1_rating, a2_rating, a3_rating, a4_rating, a5_rating, a6_rating)), #create a list of these columns 
+    randKeepMean = list(sample(randKeepMean, 3, replace = F)), # create a list of 1000 o samples
+    randKeepMean  = mean (randKeepMean) #average them 
+    )
+
+#Creat the average of the homophily
+dHom= s %>% 
+  gather(a1_rating,a2_rating, a3_rating, a4_rating,a5_rating,a6_rating, key = otherRating, value = rating)  %>% # turn these columns to long format
+  group_by(subject_id, trial) %>% #group by trial and subject_id
+  mutate(abs_rank = abs(rating - subject_rating)) %>% #for each one take the absolute value of the difference between the ratings and the subject own ratings
+  arrange(subject_id,trial,abs_rank) %>% # arragne them according to size
+  slice(1:3)%>%
+  summarize (meanKeptHom = mean(rating))
+
+
+#changed this code to choose one sided homophily
+dLib= s %>% 
+  gather(a1_rating,a2_rating, a3_rating, a4_rating,a5_rating,a6_rating, key = otherRating, value = rating)  %>% # turn these columns to long format
+  group_by(subject_id, trial) %>% #group by trial and subject_id
+  mutate(libRank = ifelse(rating - subject_rating<0,10,rating - subject_rating))%>% #for each one take the absolute value of the difference between the ratings and the subject own ratings
+  arrange(subject_id,trial,libRank) %>% # arragne them according to size
+  slice(1:3)%>%
+  summarize (meanKeptLib = mean(rating))
+
+
+s = left_join(s,dHom, by = c("subject_id", "trial"))
+s = left_join(s,dLib, by= c("subject_id", "trial"))
+
+median(s$ratingMean)
+s$lowHigh =ifelse (s$ratingMean<=5,1,2)
+
+
+
+dStrategyCompare=s %>%
+  gather(randKeepMean,meanKeptHom,realKeepMean,meanKeptLib, key=keepType, value= value ) 
+
+
+r =lmer(value~keepType+(1|subject_id),dStrategyCompare);summary(r)
+#confint(r,level =.95)
+
+dfc <- summarySE(dStrategyCompare, measurevar="value", groupvars=c("keepType"), na.rm = T)
+
+dfc$keepType=factor(dfc$keepType, labels=c("Max Homophily","One Sided Homophily", "Random chooser", "Actual choice"))
+
+dfc = subset(dfc, keepType!= "Random chooser")
+#dfc$value[3]=5.39
+keepType=c("Max Homophily","One Sided Homophily","Actual choice")
+pd <- position_dodge(0)
+
+#dfc$ci = c(0.19,0.18)
+
+#dfc = subset (dfc , keepType != "Random chooser")
+
+
+g=ggplot(dfc, aes(x=keepType, y=value, fill=keepType)) + 
+    scale_x_discrete(limits=keepType)+
+    geom_bar(position=position_dodge(), stat="identity", colour="black" ) +
+    labs(title="")+
+    guides(fill=guide_legend(title=NULL))+
+    theme_bw()+
+    theme(plot.title = element_text(hjust = 0.5,size = rel(1.5)),
+          axis.title.y = element_text(face="bold",  size=14),
+          axis.text.x  = element_text( vjust=0.5, size=16),
+          axis.text.y  = element_text( vjust=0.5, size=12),
+          axis.title.x = element_blank(),legend.position="none") +  
+    coord_cartesian(ylim=c(4.5, 6)) +
+  scale_fill_manual(values=c("#99CCFF", "#FF9999", "#000000"))+
+  #facet_wrap(~ poli)+
+  labs(title= "Average Ratings of Kept Participants", y= "Kept rating")+
+  geom_errorbar(aes(ymin=value-ci, ymax=value+ci),
+                  width=.1,position=position_dodge(.9));g
+
+
+
+g=ggplot(dfc, aes(x=keepType, y=value, fill=keepType)) + 
+    scale_x_discrete(limits=keepType)+
+    geom_bar(position=position_dodge(), stat="identity", colour="black" ) +
+    labs(title="")+
+    guides(fill=guide_legend(title=NULL))+
+    theme_bw()+
+    theme(plot.background = element_rect(fill = "black"),
+        panel.background = element_rect(fill = 'black'),
+        #panel.border = element_blank(),
+        panel.grid = element_blank(),
+        legend.background= element_rect(fill="black", colour=NA),
+        legend.text = element_text(colour = 'white'),
+        plot.title = element_text(size = rel(1.3),hjust =.5, colour = 'white'),
+        axis.title.y = element_text(face="bold",  size=14,colour = "white"),
+        axis.text.x  = element_text( vjust=0.5, size=14,colour = "white"),
+        axis.text.y  = element_text( vjust=0.5, size=16,colour = "white"),
+        axis.title.x = element_blank()) +  
+    coord_cartesian(ylim=c(4.5, 6)) +
+  scale_fill_manual(values=c("#99CCFF", "#FF9999", "#66cc60"))+
+  #facet_wrap(~ poli)+
+  labs(title= "Average Ratings of Kept Participants", y= "Kept rating")+
+  geom_errorbar(aes(ymin=value-ci, ymax=value+ci),
+                  width=.1,position=position_dodge(.9), colour= 'white');g
+
+#rm(dHom, dLib,dStrategyCompare,)
+
+```
+
+
+
+
+###4 - stickiness of users
+
+```{r stickiness - setup}
+#add a map function insted of creating three codes
+stickCounter = function (df, keptVar, id=quo(subject_id), trial = quo(trial)){
+  keptVar = enquo(keptVar)
+  df %>%
+    select(!!id, !!trial,!!keptVar)%>% #select a few variable 
+    mutate(id =!!keptVar, 
+           id_above= lag(!!keptVar),#variable and the one above
+           id_below= lead(!!keptVar)) %>% #variable and the one below
+    mutate(compare_above=(id==id_above),
+           kept=(id==id_below)) %>%   #compare these - true false.
+    replace_na(list(compare_above = 0))  %>%   # convert to 01
+    replace_na(list(kept = 0))  %>%   # convert to 01
+    group_by(subject_id,!!keptVar) %>% 
+    mutate(sticky = cumsum(compare_above))%>%
+    ungroup()%>%
+    select(subject_id, trial, sticky, kept)
+}
+
+
+a1=stickCounter(d,a1_id)
+a2=stickCounter(d,a2_id)
+a3=stickCounter(d,a3_id)
+a4=stickCounter(d,a4_id)
+a5=stickCounter(d,a5_id)
+a6=stickCounter(d,a6_id)
+
+colnames(a1)= c("subject_id","trial","a1_sticky","a1_decisionKeep")
+colnames(a2)= c("subject_id","trial","a2_sticky","a2_decisionKeep")
+colnames(a3)= c("subject_id","trial","a3_sticky","a3_decisionKeep")
+colnames(a4)= c("subject_id","trial","a4_sticky","a4_decisionKeep")
+colnames(a5)= c("subject_id","trial","a5_sticky","a5_decisionKeep")
+colnames(a6)= c("subject_id","trial","a6_sticky","a6_decisionKeep")
+
+d= left_join(d,a1,by=c("subject_id","trial")); rm(a1)
+d= left_join(d,a2,by=c("subject_id","trial")); rm(a2)
+d= left_join(d,a3,by=c("subject_id","trial")); rm(a3)
+d= left_join(d,a4,by=c("subject_id","trial")); rm(a4)
+d= left_join(d,a5,by=c("subject_id","trial")); rm(a5)
+d= left_join(d,a6,by=c("subject_id","trial")); rm(a6)
+
+
+q = d%>%
+  select (subject_id,trial,condition, stimulus,subject_rating,a1_rating,a2_rating,a3_rating,a4_rating,a5_rating,a6_rating, ends_with("sticky"),ends_with("decisionKeep"))%>%
+  gather(question, value, -subject_id,-trial,-condition,-stimulus,-subject_rating)%>%
+  separate(question, into = c("agent", "question"), sep ="\\_")%>%
+  separate(agent, into = c("removeThis","agent"),sep=1)%>%
+  select (-removeThis)%>%
+  spread(question,value)%>%
+  mutate(stickyBinary =ifelse(sticky>=1,1,0))
+
+q$dist = q$rating-q$subject_rating
+
+```
+
+
+```{r stickiness}
+
+mean (q$sticky)
+
+median(x = q$sticky)
+
+
+r = lmer (decisionKeep~ stickyBinary+dist+ (1|subject_id),q);summary(r)
+
+
+dfc <- summarySE(q, measurevar="decisionKeep", groupvars=c("sticky"), na.rm = T)
+dfc =subset(dfc,sticky<7)
+
+g = (ggplot(dfc,aes(x=sticky, y=decisionKeep ))
+  + geom_errorbar(aes(ymin=decisionKeep-ci, ymax=decisionKeep+ci), width=.1) 
+  + geom_line( size = 1.2) 
+  +geom_point() 
+  #+scale_y_continuous(limits = c(-.5, 1.5))
+  +theme_bw()
+  + geom_hline(yintercept = 0.5,linetype="dashed", color = "red")
+  +theme(plot.title = element_text(hjust = 0.5),
+        legend.title=element_blank(),
+         axis.title.y = element_text(  size=14),
+         axis.text.x  = element_text( vjust=0.5, size=14),
+         axis.text.y  = element_text( vjust=0.5, size=12),
+         axis.title.x = element_text(vjust=0.5, size=14)) 
+  +labs(title = "Probability of Being Kept Again", x = "Number of kept trials", y = "p (keep)"));g
+
+
+r = lmer (decisionKeep~ stickyBinary+dist+ (1|subject_id),q);summary(r)
+
+```
+
+```{r}
+
+r= glmer (decisionKeep~ stickyBinary*dist + (1|subject_id), q) ; summary (r)
+
+
+dfc <- summarySE(q, measurevar="decisionKeep", groupvars=c("dist", "stickyBinary"), na.rm = T)
+
+dfc$stickyBinary=factor(dfc$stickyBinary, label = c("new", "previously kept"))
+
+dfc =subset(dfc,N>15)
+
+
+
+g = (ggplot(dfc,aes(x=dist, y=decisionKeep,colour = stickyBinary ))
+  #+ geom_errorbar(aes(ymin=subject_rating-ci, ymax=subject_rating+ci), width=.1) 
+  +stat_smooth(aes(linetype=stickyBinary, colour =stickyBinary), 
+              size =1.2, method='lm',fill = "grey", 
+              se = T, na.rm =T) 
+  #+geom_point() 
+  #+scale_y_continuous(limits = c(3.5, 6))
+  +theme_bw()
+  +theme(legend.title=element_blank(),axis.title.y = element_text(  size=14),axis.text.x  = element_text( vjust=0.5, size=14),axis.text.y  = element_text( vjust=0.5, size=12),axis.title.x = element_text(vjust=0.5, size=14))
+  +labs(title = "", x = "Distance from participants", y = "p (keep)"));g
+
+```
+###sentiment Analysis
+
+```{r add sentiment analysis file- setup}
+#setup for sentistrength create a txt file with all the texts. 
+#sent = d%>%
+#  select(condition,subject_id, trial, ends_with("rating"), ends_with("title"), -starts_with("kept"), -starts_with("elim") )%>%
+#  gather(agent, value, -subject_id, -trial,-condition)%>%
+#  separate(agent, into = c("agent","question"), sep ="\\_")%>%
+#  spread(question, value)
+
+
+#text = sent%>%
+#  select (title)
+#write.table(text,"allText.txt",sep="\t",row.names=FALSE, col.names = FALSE)
+
+s = d%>%
+  select(condition,subject_id, trial, ends_with("rating"), 
+         ends_with("title"), -starts_with("kept"),
+         -starts_with("elim"),ends_with("sentPos"), 
+         ends_with("sentNeg") )%>%
+  gather(agent, value, -subject_id, -trial,-condition)%>%
+  separate(agent, into = c("agent","question"), sep ="\\_")%>%
+  spread(question, value)
+
+s$sentNeg =as.numeric(s$sentNeg)
+s$sentPos =as.numeric(s$sentPos)
+s$rating =as.numeric(s$rating)
+
+
+cor.test(s$rating,s$sentPos)
+cor.test(s$rating,s$sentNeg)
+cor.test(s$rating,s$sentTot)
+
+
+
+
+ggplot(sent, aes(x=rating, y=sentNeg)) +
+    geom_point(shape=1,position=position_jitter(width=.5,height=.5)) +    
+    geom_smooth(method=lm)
+
+```
+
+```{r difference analysis}
+
+# I need to restructure the files in order to get this ansswer
+
+
+```
+
+
+###word nuber as predictor 
+
+```{r}
+wc = d %>% 
+  select(subject_id,condition,stimulus,subject_rating,starts_with("kept"),starts_with("elim"))%>%
+  gather(key,value, -subject_id,-condition,-stimulus, -subject_rating)%>%
+  separate(key, into = c("elimKeep", "number", "question"), sep ="\\_")%>%
+  spread(question, value)%>%
+  mutate(wordCount = sapply(gregexpr("[[:alpha:]]+", title), function(x) sum(x > 0)))
+
+wc$elimKeep= factor (wc$elimKeep)
+wc$elimKeep = ifelse (wc$elimKeep=="elim",0,1)
+wc$rating=as.integer(wc$rating)
+
+r = glmer (elimKeep~ condition*wordCount+(1|subject_id),wc);summary(r)
+
+
+wc%>%
+  group_by(condition) %>%
+  do(print(summary((glmer(elimKeep~ log(wordCount)+rating+(1|subject_id),family=binomial, data=.)))))
+
+
+wc%>%
+  group_by(condition) %>%
+  do(print(summary((lmer(rating~ wordCount+(1|subject_id), data=.)))))
+
+
+r = lmer (rating~ log(wordCount)+(1|subject_id),wc);summary(r)
+
+rm (wc)
+```
+
+#### aditional analysis
+
+```{r trial by trial prediction}
+
+
+robb = d%>%
+  #slice (1:10)%>%
+  arrange(subject_id, trial)%>%
+  select(condition,subject_id, trial, ends_with("rating"), -starts_with("a"))%>%
+  mutate(meanKeptPrevious = lag((kept_1_rating+kept_2_rating+kept_3_rating)/3))%>%
+  mutate(meanElimPrevious = lag((elim_1_rating+elim_2_rating+elim_3_rating)/3))%>%
+  mutate(meanPrevious = (meanKeptPrevious+meanElimPrevious)/2)
+
+
+r= lmer (subject_rating~meanKeptPrevious+ (1|subject_id), robb) ;summary(r)
+
+r= lmer (subject_rating~meanElimPrevious+ (1|subject_id), robb) ;summary(r)
+
+r= lmer (subject_rating~meanPrevious+ (1|subject_id), robb) ;summary(r)
+
+```
+
+
+
+
+
+
+```{r }
+#look at the absolute value compare elim v keep
+#r = lmer (peerDif~ elimKeep+(1|subject_id), sl) ; summary (r)
+
+
+dfc <- summarySE(subset(dl,condition == "select" & elimKeep=="kept"), measurevar="peerDif", groupvars=c("elimKeep","subject_id"), na.rm = T)
+
+
+
+
+```
+
+
+
+
+
+
+```{r moderators, include=FALSE,echo=FALSE}
+m = read_csv('./moderators/network_moderators.csv') # we are reading the moderators file (which was collected via qualtrics)
+m = m[,c(19:93)] #cleaning
+d = left_join(d,m, by="subject_id") #combining the two datasets based on participants' id
+
+hist(d$poli)
+
+d$libCon = ifelse(d$poli <4,1,2)
+
+
+
+
+
+
+
+
+
+
+
+r = lmer (keepMean~closeKeep*poli+(1|subject_id),dCloser);summary(r)
+
+dc = dCloser %>%
+  group_by(poli,closeKeep)%>%
+  summarise(keepMean= mean(keepMean))
+
+dc = left_join(dc,rating , by="subject_id")
+
+dc$difKeep = dc$ratingMean-dc$keepMean
+
+
+#grpah 
+ggplot()+
+  geom_point(data= dc, 
+             aes(x=poli, y=keepMean, color=closeKeep),
+             shape=1,
+             position = position_jitter(w = 0, h = .5))
+
+
+
+
+```
+
+
+
+
+
+```{r habituation, include=FALSE,echo=FALSE}
+
+
+r = lmer(subject_rating~ trial +(1|subject_id), d);summary(r)
+# it seems that participants are habituating. 
+
+```
+power analysis
+```{r , include=FALSE,echo=FALSE}
+
+p = subset (dl, subject_id <15)
+
+length (unique(p$subject_id))
+library (simr)
+
+p$absdif = abs(p$peerDif)
+r = lmer (absdif~ difCondition+(1|subject_id), p) ; summary (r)
+
+p$difCondition= ifelse(p$difCondition == "difKeep", 1,2)
+
+p$difCondition =as.integer(p$difCondition)
+
+p$difCondition =factor(p$difCondition)
+powerSim(r,fixed("difCondition"),nsim=30)
+
+fixef(r)
+```
+
+
+##graphs to presentation 
+ 
+```{r homophily1}
+
+dfc <- summarySE(dl, measurevar="peerDif", groupvars=c("elimKeep","condition"), na.rm = T)
+
+
+dfc$elimKeep=factor(dfc$elimKeep, labels = c("Eliminated", "Kept"))
+
+#dfc$peerDif[3] = .30
+pd <- position_dodge(0)
+g=ggplot(dfc, aes(x=condition, y=peerDif, fill=elimKeep)) + 
+  geom_bar(position='dodge', stat="identity", colour="black" ) +
+  labs(title=" Difference between kept users and the participant")+
+  guides(fill=guide_legend(title=NULL))+
+  theme_bw()+
+  theme(plot.background = element_rect(fill = "black"),
+        panel.background = element_rect(fill = 'black'),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        legend.background= element_rect(fill="black", colour=NA),
+        legend.text = element_text(colour = 'white'),
+        plot.title = element_text(size = rel(1.3),hjust =.5, colour = 'white'),
+        axis.title.y = element_text(face="bold",  size=14,colour = "white"),
+        axis.text.x  = element_text( vjust=0.5, size=18,colour = "white"),
+        axis.text.y  = element_text( vjust=0.5, size=16,colour = "white"),
+        axis.title.x = element_blank()) +  
+  geom_errorbar(aes(ymin=peerDif-ci, ymax=peerDif+ci),
+                  width=.1,position=position_dodge(.9),colour='white')+
+  labs(title = "Peer Emotions in Relation to Participant Emotions", 
+       x = "",
+       y = "")+
+  scale_fill_manual(values=c("#99CCFF", "#FF9999", "#000000"))+
+  geom_vline(xintercept = 1.5,linetype="dashed", color = "white")+
+  geom_hline(yintercept = 0,linetype= 'dashed', color = "white")+
+  annotate("text", x = 1.6, y = -1.6, label = "Less Emotional",colour ='white', size = 4.5)+
+  annotate("text", x = 1.6, y = 1.6, label = "More Emotional", colour = 'white', size = 4.5)+
+  coord_flip(ylim=c(-2, 2));g
+
+
+
+```
+
+
+```{r ratings}
+
+dfc <- summarySE(dl, measurevar="subject_rating", groupvars=c("condition", "trial"), na.rm = T)
+
+g = (ggplot(dfc,aes(x=trial, y=subject_rating ,fill = condition,colour=condition))
+  + geom_point(shape =1)
+  #+ geom_errorbar(aes(ymin=subject_rating-ci, ymax=subject_rating+ci), width=.1) 
+  +stat_smooth(aes(linetype=condition, colour =condition), 
+              size =1.2, method='lm',fill = "grey", 
+              se = T, na.rm =T) 
+  #+geom_point() 
+  +scale_y_continuous(limits = c(4.5, 6))
+  +theme_bw()
+  +theme(plot.background = element_rect(fill = "black"),
+        panel.background = element_rect(fill = 'black'),
+        #panel.border = element_blank(),
+        panel.grid = element_blank(),
+        legend.background= element_rect(fill="black", colour=NA),
+        legend.text = element_text(colour = 'white'),
+        plot.title = element_text(size = rel(1.3),hjust =.5, colour = 'white'),
+        axis.title.y = element_text(face="bold",  size=14,colour = "white"),
+        axis.text.x  = element_text( vjust=0.5, size=18,colour = "white"),
+        axis.text.y  = element_text( vjust=0.5, size=16,colour = "white"),
+        axis.title.x = element_text(face="bold",  size=14,colour = "white")) 
+  +scale_fill_manual(values=c("#99CCFF", "#FF9999", "#000000"))
+
+  +labs(title = "Participant Emotions per Trial Number", x = "Trial Number", y = "Emotion Ratings"));g
+
+```
+```{r}
+
+s=subset(s,agent != "subject")
+write.csv(s,"sentiment_value.csv")
+
+ak = d%>%select (trial,ends_with("id"),-starts_with("elim"))
+
+write.csv(ak, "PeerIds.csv")
+
+```
+
+```{r convert to json}
+library(jsonlite)
+
+table = read_csv("C:/Users/chaga/Google Drive/research/network selection/network_regulation_study_1_police_brutality/agent_ratings_FEMALE.csv")
+
+
+table =toJSON(table)
+
+write(table, 'C:/Users/chaga/Google Drive/research/network selection/js_tasks/agent_data/agent_rating_FEMALE.json')
+```
+#vibha simulation  - compare max homphily, one sided homophily an d
+
+```{r prepare the data}
+
+
+
+#upload the library
+library(tidyverse)
+library(tidyboot)
+library(reshape2)
+
+#get real data
+realData =
+    list.files(pattern="*.csv")  %>% # create a list of all csv files in the folder  
+    map_df(~read_csv(.))
+
+idList = unique(realData$subject_id)
+
+
+#import simulation data
+simResults = read_csv("model_simulation/simulation_results.csv")%>%
+  filter(id %in% idList)
+
+names(simResults) <- c("subject_id", "strategy", "mean_mean", "mean_ci_low", "mean_ci_high","diff_mean","diff_ci_low","diff_ci_high","loyalty_mean","loyalty_ci_low","loyalty_ci_high")
+
+
+
+
+#rename real data conditions
+realData$condition = factor (realData$condition, label = c("select", "control") )
+#only take experimental participants
+realData = subset(realData, condition == "select")
+
+#only keep relevant columns
+realData = realData %>%
+  select(subject_id, subject_rating, kept_1_rating, kept_2_rating, kept_3_rating)
+
+#find mean difference per round
+#ASK: do you want absolute value of difference?
+realData["difference_1"] <- realData$kept_1_rating - realData$subject_rating
+realData["difference_2"] <- realData$kept_2_rating - realData$subject_rating
+realData["difference_3"] <- realData$kept_3_rating - realData$subject_rating
+realData["diff_mean"] <- rowMeans(realData[c('difference_1', 'difference_2', 'difference_3')])
+
+#find mean kept score per round
+#ASK: ok to do it like this, i.e. n = 20
+realData["kept_mean"] <- rowMeans(realData[c('kept_1_rating', 'kept_2_rating', 'kept_3_rating')])
+
+#use tidyboot to create an mean average kept score
+realMean = realData %>%
+  group_by(subject_id) %>%
+  tidyboot_mean(column = kept_mean)
+
+realMean = realMean %>%
+  select(-empirical_stat, -n)
+
+names(realMean) <- c("subject_id", "mean_ci_low", "mean_mean", "mean_ci_high")
+
+realDiff = realData %>%
+  group_by(subject_id) %>%
+  tidyboot_mean(column = diff_mean)
+
+realDiff = realDiff %>%
+  select(-empirical_stat, -n)
+
+names(realDiff) <- c("subject_id", "diff_ci_low", "diff_mean", "diff_ci_high")
+
+realResults = left_join(realMean, realDiff, by = 'subject_id')
+  
+
+simResults=simResults%>%
+  select(-starts_with("loyal"))
+
+
+realResults$strategy="real"
+
+
+simData = rbind(realResults,simResults)
+
+
+
+
+
+meansSimulation =simData%>%
+  group_by(strategy)%>%
+  summarize (strategyMean = mean(mean_mean, na.rm =T))
+
+```
+
+```{r graph results}
+
+
+r =lmer (mean_mean ~ strategy+ (1|subject_id),simData);summary(r)
+
+
+dfc <- summarySE(simData, measurevar="mean_mean", groupvars=c("strategy"), na.rm = T)
+
+
+ggplot(dfc, aes(x=strategy, y=mean_mean, fill=strategy)) + 
+    geom_bar(position=position_dodge(), stat="identity", colour="black" ) +
+    labs(title="")+
+    guides(fill=guide_legend(title=NULL))+
+    theme_bw()+
+    theme(plot.title = element_text(hjust=0.5,size = rel(1.5)),
+          axis.title.y = element_text(face="bold",  size=14),
+          axis.text.x  = element_text( vjust=0.5, size=18),
+          axis.text.y  = element_text( vjust=0.5, size=12),
+          axis.title.x = element_blank(),
+          legend.position="none") +   
+  coord_cartesian(ylim=c(4.5, 6)) +
+  #facet_wrap(~elimKeep)+
+  labs(title= "mean of simulation" , y= "mean_mean")+
+  geom_errorbar(aes(ymin=mean_mean-ci, ymax=mean_mean+ci),
+                  width=.1,position=position_dodge(.9))
+
+
+
+
+```
+
